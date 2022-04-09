@@ -1,0 +1,156 @@
+---
+title: "hw2_app_stat"
+output: pdf_document
+author: Kvan Valerii
+date: '2022-03-23'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+```
+
+# 1. Read and construct one shoe from card decks
+
+Shoe is multiple card deck stacked together
+according to rules of blackjack
+
+```{r}
+setwd("E:/education/Applied Stats/HW2")
+deck <- read.csv('deck.csv')
+
+#index for stack
+top_index <- 5
+c_names <- c("face", "suit", "value")
+shoe <- do.call("rbind", replicate(4, deck, simplify = FALSE))
+
+head(shoe)
+```
+
+## Functions
+
+```{r}
+# shuffle all cards in shoe
+shuffle_deck <- function()
+{
+  shoe <<- shoe[sample(1:nrow(shoe)), ]
+}
+
+print_hand <- function(name, hand)
+{
+    cat(paste(name, " hand:\n"))
+    for (i in 1:nrow(hand))
+      cat(paste(hand[i,1], hand[i,2], hand[i,3], "\n"))
+    cat(paste("sum ", sum(hand$value), "\n"))
+}
+
+calculate_chance <- function()
+{
+  dealer_sum <- sum(dealer_hand$value)
+  player_sum <- sum(player_hand$value)
+  if (player_sum > 21)
+    cat("chance not to bust 0%\n")
+  else 
+  {
+    current_shoe <- shoe[top_index:nrow(shoe), ]
+    
+    #calculate prob not to overcome 21
+    good_vals_n <- length(current_shoe$value[(current_shoe$value + player_sum) > 21])
+    prob_not_to_bust <- 1 - good_vals_n / nrow(current_shoe)
+  
+    cat(paste("chance not to bust", as.integer(prob_not_to_bust * 100), "%\n"))
+  }
+  cat("\n")
+}
+
+# deals you a card and prints state
+deal <- function()
+{
+  player_hand[top_index - 2,] <<- shoe[top_index,]
+  top_index <<- top_index + 1
+  
+  print_hand("Dealer", hand=dealer_hand)
+  cat("\n")
+  print_hand("Your", hand=player_hand)
+  
+  calculate_chance()
+  #return(sum(player_hand$value))
+}
+
+free_hand <- function()
+{
+  top_index <<- 5
+  
+  dealer_hand <<- setNames(data.frame(matrix(ncol = 3, nrow = 0)), c_names)
+  player_hand <<- setNames(data.frame(matrix(ncol = 3, nrow = 0)), c_names)
+}
+
+#shuffles deck, deals 2 cards for you and dealer. and prints state
+start_game <- function() 
+{
+  free_hand()
+  shuffle_deck()
+  
+  dealer_hand[1:2,] <<- shoe[1:2,]
+  player_hand[1:2,] <<- shoe[3:4,]
+  
+  print_hand("Dealer", hand=dealer_hand)
+  cat("\n")
+  print_hand("Your", hand=player_hand)
+  
+  calculate_chance()
+}
+
+# prints result: win or loose
+stop_game <- function()
+{
+  dealer_sum <- sum(dealer_hand$value)
+  player_sum <- sum(player_hand$value)
+  if (player_sum > 21)
+    cat("You lose\n")
+  else if (player_sum >= dealer_sum)
+    cat("You win\n")
+  else
+    cat("You lose\n")
+}
+
+#just for debug in loop
+play <- function()
+{
+  start_game()
+  
+  msg = "write d to deal another card or e for end of turn"
+  line <- readline(prompt = msg)
+  while (line != "e")
+  {
+    if (line == "d")
+    {
+      player_sum <- deal()
+      if (player_sum > 21)
+      {
+        break
+      }
+    }
+      
+    line <- readline(prompt = msg)
+  }
+  stop_game()
+}
+
+```
+# Example
+
+
+```{r}
+start_game()
+deal()
+stop_game()
+```
+
+```{r}
+start_game()
+deal()
+deal()
+stop_game()
+```
+
