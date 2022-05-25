@@ -27,14 +27,6 @@ zanu <- read.csv("ZANU_genes.tsv", sep='\t')
 head(gene_mapping)
 ```
 
-# Filter mapping data
-
-## Choose only 2, 3, X chr
-
-```{r}
-gene_mapping <- gene_mapping[gene_mapping$contig %in% c('2', '3', 'X'),]
-unique(gene_mapping$contig)
-```
 
 ## Split DONG column and drop it
 
@@ -42,6 +34,38 @@ unique(gene_mapping$contig)
 gene_mapping <- cbind(gene_mapping, setNames(data.frame(x = do.call('rbind', strsplit(as.character(gene_mapping$DONG), ',', fixed=TRUE))), c('seq_id_d', 'middle_d', 'strand_d', 'length_d', 'name_d')))[,!(names(gene_mapping) %in% c('DONG'))]
 head(gene_mapping)
 ```
+
+# Filter mapping data
+
+## Choose only 2, 3, X chr for ZANU
+
+```{r}
+gene_mapping <- gene_mapping[gene_mapping$contig %in% c('2', '3', 'X'),]
+unique(gene_mapping$contig)
+```
+
+## Transfomr Dongola sequence id to chr
+
+```{r}
+#NC_053517.1	2
+#NC_053518.1	3	
+#NC_053519.1	X	
+#http://v2.insect-genome.com/Chromosome/Anopheles%20arabiensis
+
+gene_mapping$seq_id_d[gene_mapping$seq_id_d == 'NC_053517.1'] <- '2'
+gene_mapping$seq_id_d[gene_mapping$seq_id_d == 'NC_053518.1'] <- '3'
+gene_mapping$seq_id_d[gene_mapping$seq_id_d == 'NC_053519.1'] <- 'X'
+head(gene_mapping)
+```
+
+## Choose only 2, 3, X chr for DONGOLA
+
+```{r}
+gene_mapping <- gene_mapping[gene_mapping$seq_id_d %in% c('2', '3', 'X'),]
+unique(gene_mapping$seq_id_d)
+```
+
+
 
 ## Transform name of DONGOLA genes in gene mapping table to format that used in DONGOLA csv.
 
@@ -96,15 +120,19 @@ choose_closest_not_used_gene <- function(final_mapping) {
     tmp_rows <- tmp_rows[order(tmp_rows$distance),]
     for (i in 1:nrow(tmp_rows)) {
       dname <- tmp_rows[i, ]$name_d 
-      contig <- tmp_rows[i, ]$contig 
+      contig <- tmp_rows[i, ]$contig
+      seq_id <- tmp_rows[i, ]$seq_id_d
       
       if (!(dname %in% dongola_name_buffer)) {
+        if (contig != seq_id)
+          next
+        
         #add to buffer
-        append(dongola_name_buffer, dname)
+        dongola_name_buffer <- append(dongola_name_buffer, dname)
         
         #add to final mapping table
-        final_mapping <- rbind(final_mapping, data.frame(chr=contig, zname=zname,
-                                                         dname=dname))
+        final_mapping <- rbind(final_mapping, data.frame(chrZ=contig, chrD=seq_id,
+                                                         zname=zname, dname=dname))
         break
       }
     }
@@ -117,7 +145,8 @@ choose_closest_not_used_gene <- function(final_mapping) {
 ## make table with the most closest genes
 
 ```{r}
-final_mapping <- setNames(data.frame(matrix(ncol = 3, nrow = 0)), c("chr", "zname", "dname"))
+final_mapping <- setNames(data.frame(matrix(ncol = 4, nrow = 0)), c("chrZ", "chrD",
+                                                                    "zname", "dname"))
 
 final_mapping <- choose_closest_not_used_gene(final_mapping)
 head(final_mapping)
@@ -133,7 +162,10 @@ create_karyotype_table <- function(final_mapping, specie1, specie2) {
                                    c("Species_1", "Start_1", "End_1", "Species_2", 
                                      "Start_2", "End_2", "fill"))
   
-  final_mapping <- final_mapping[order(final_mapping$chr),]
+  dongola_chr_2_max = 111990000
+  dongola_chr_3_max = 95710000
+  
+  #final_mapping <- final_mapping[order(final_mapping$chr),]
   
   j = 1
   
@@ -143,22 +175,45 @@ create_karyotype_table <- function(final_mapping, specie1, specie2) {
     
     zname = tmp_row$zname[1]
     dname = tmp_row$dname[1]
-    chr = tmp_row$chr[1]
+    chrZ = tmp_row$chrZ[1]
+    chrD = tmp_row$chrD[1]
     
     specie1_row <- specie1[specie1$ID == zname,]
     specie2_row <- specie2[specie2$ID == dname,]
     
-    specie_num <- switch(chr, "X" = 1, "2" = 2, "3" = 3)
+    specie1_chr_num <- switch(chrZ, "X" = 1, "2" = 2, "3" = 3)
+    specie2_chr_num <- switch(chrD, "X" = 1, "2" = 2, "3" = 3)
     
-    #5891bf - blue
-    #db4527 - red
-    color_to_fill <- if (specie1_row$strand[1] == specie2_row$strand[1]) '5891bf' else 'db4527'
     
-    synteny_table_dual <- rbind(synteny_table_dual, 
-                                data.frame(Species_1=specie_num, Start_1=specie1_row$start,
+    #invert for 2 and 3 chr
+    if (specie1_chr_num == 2 || specie1_chr_num == 3)
+    {
+      #5891bf - blue
+      #db4527 - red
+      color_to_fill <- if (specie1_row$strand[1] == specie2_row$strand[1]) 'db4527' else '5891bf'
+      
+      start_reverse <- if(specie1_chr_num == 2) dongola_chr_2_max - specie2_row$start + 1 else dongola_chr_3_max - specie2_row$start + 1
+      end_reverse <- if(specie1_chr_num == 2) dongola_chr_2_max - specie2_row$end + 1 else dongola_chr_3_max - specie2_row$end + 1
+    
+      synteny_table_dual <- rbind(synteny_table_dual, 
+                                data.frame(Species_1=specie1_chr_num, Start_1=specie1_row$start,
                                            End_1=specie1_row$end,
-               Species_2=specie_num, Start_2=specie2_row$start, End_2=specie2_row$end,
+               Species_2=specie2_chr_num, Start_2=start_reverse, End_2=end_reverse,
                fill=color_to_fill))
+    }
+    else 
+    {
+      #5891bf - blue
+      #db4527 - red
+      color_to_fill <- if (specie1_row$strand[1] == specie2_row$strand[1]) '5891bf' else 'db4527'
+      
+      synteny_table_dual <- rbind(synteny_table_dual, 
+                                data.frame(Species_1=specie1_chr_num, Start_1=specie1_row$start,
+                                           End_1=specie1_row$end,
+               Species_2=specie2_chr_num, Start_2=specie2_row$start, End_2=specie2_row$end,
+               fill=color_to_fill))
+    }
+    
     
   
     j <- j + 2
@@ -166,35 +221,6 @@ create_karyotype_table <- function(final_mapping, specie1, specie2) {
   
   return (synteny_table_dual)
 }
-```
-
-## Function for map initial specie table with info about chr
-
-```{r}
-add_chr_info <- function(s1, gene_mapping) {
-  s1 <- cbind(s1, setNames(data.frame(matrix(ncol = 1, nrow = nrow(s1))),
-                                   c("Chr")))
-  
-  for (name in unique(gene_mapping$name_d)) {
-    
-    chr <- gene_mapping[gene_mapping$name_d == name,]$contig[1]
-    
-    s1$Chr[s1$ID == name] <- chr[1]
-  }
-  
-  return (s1)
-}
-```
-
-
-## calculate approx. length of DONGOLA chr
-
-```{r}
-#calculate approx. length of DONGOLA chr
-dongola <- add_chr_info(dongola, gene_mapping)
-maxX <- max(dongola[dongola$Chr == 'X',]$end[!is.na(dongola[dongola$Chr == 'X',]$end)])
-max2 <- max(dongola[dongola$Chr == '2',]$end[!is.na(dongola[dongola$Chr == '2',]$end)])
-max3 <- max(dongola[dongola$Chr == '3',]$end[!is.na(dongola[dongola$Chr == '3',]$end)])
 ```
 
 ## Final
@@ -210,11 +236,15 @@ karyotype_table_dual <- setNames(data.frame(matrix(ncol = 7, nrow = 0)),
 karyotype_table_dual <- rbind(karyotype_table_dual,
                               data.frame(Chr=c('X','2','3'), Start=c(1, 1, 1),
                                              End=c(27238055, 114783175, 97973315),
-                                         fill='969696',
+                                         fill='969696',      
                                              species='Zanu', size=12, color='252525'))
+
+#dongola chromosomes length 
+#http://v2.insect-genome.com/Chromosome/Anopheles%20arabiensis
+#need to convert mb to bp
 karyotype_table_dual <- rbind(karyotype_table_dual,
                               data.frame(Chr=c('X','2','3'), Start=c(1, 1, 1),
-                                             End=c(maxX, max2, max3),
+                                             End=c(26910000, 111990000, 95710000),
                                          fill='969696',
                                              species='Dongola', size=12, color='252525'))
 
